@@ -1,6 +1,6 @@
 # FillMeUp
 
-FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, authenticates a LinkedIn session for discovery, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
+FillMeUp is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, authenticates a LinkedIn session for discovery, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
 
 ## What it includes
 
@@ -71,7 +71,7 @@ TINYFISH_ASYNC_TIMEOUT_MS=300000
 TINYFISH_ASYNC_POLL_INTERVAL_MS=3000
 ```
 
-If `OPENAI_API_KEY` or `TINYFISH_API_KEY` is missing, FormPilot still runs in a local demo mode with clear mock fallbacks.
+If `OPENAI_API_KEY` or `TINYFISH_API_KEY` is missing, FillMeUp still runs in a local demo mode with clear mock fallbacks.
 
 ## Run locally
 
