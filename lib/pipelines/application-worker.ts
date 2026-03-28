@@ -19,7 +19,7 @@ export async function processApplication(jobId: string) {
 
   const existingApplication = getApplicationByJobId(jobId);
   const applicationId = existingApplication?.id ?? crypto.randomUUID();
-  const baseRecord: ApplicationRecord = existingApplication ?? {
+  let applicationRecord: ApplicationRecord = existingApplication ?? {
     id: applicationId,
     jobId,
     jobTitle: job.title,
@@ -38,72 +38,93 @@ export async function processApplication(jobId: string) {
     tinyFishRuns: {}
   };
 
-  insertApplication({
-    ...baseRecord,
-    status: "analyzing",
-    updatedAt: new Date().toISOString()
-  });
+  try {
+    applicationRecord = insertApplication({
+      ...applicationRecord,
+      status: "analyzing",
+      lastError: undefined,
+      updatedAt: new Date().toISOString()
+    });
 
-  appendActivity("application", `Application agent started reasoning over ${job.title} at ${job.company}.`);
+    appendActivity("application", `Application agent started reasoning over ${job.title} at ${job.company}.`);
 
-  const extraction = await extractApplicationFields(job);
-  const rawFields = extraction.result.fields as ApplicationField[];
-  const answers = await buildFieldAnswers({
-    profile,
-    job,
-    fields: rawFields.map((field) => ({
-      fieldId: field.fieldId,
-      label: field.label,
-      fieldType: field.fieldType,
-      placeholder: field.placeholder,
-      options: field.options,
-      required: field.required,
-      step: field.step
-    }))
-  });
+    const extraction = await extractApplicationFields(job);
+    const rawFields = extraction.result.fields as ApplicationField[];
+    const answers = await buildFieldAnswers({
+      profile,
+      job,
+      fields: rawFields.map((field) => ({
+        fieldId: field.fieldId,
+        label: field.label,
+        fieldType: field.fieldType,
+        placeholder: field.placeholder,
+        options: field.options,
+        required: field.required,
+        step: field.step
+      }))
+    });
 
-  const resolvedFields = rawFields.map<ApplicationField>((field) => {
-    const answer = answers.find((item) => item.fieldId === field.fieldId);
-    return {
-      ...field,
-      classification: answer?.classification ?? field.classification,
-      answer: answer?.answer ?? field.answer,
-      source: answer?.source ?? field.source,
-      reasoning: answer?.reasoning ?? field.reasoning
-    };
-  });
+    const resolvedFields = rawFields.map<ApplicationField>((field) => {
+      const answer = answers.find((item) => item.fieldId === field.fieldId);
+      return {
+        ...field,
+        classification: answer?.classification ?? field.classification,
+        answer: answer?.answer ?? field.answer,
+        source: answer?.source ?? field.source,
+        reasoning: answer?.reasoning ?? field.reasoning
+      };
+    });
 
-  insertApplication({
-    ...baseRecord,
-    fields: resolvedFields,
-    status: "filling",
-    updatedAt: new Date().toISOString(),
-    tinyFishRuns: {
-      ...baseRecord.tinyFishRuns,
-      extract: extraction.runId
-    }
-  });
+    applicationRecord = insertApplication({
+      ...applicationRecord,
+      fields: resolvedFields,
+      status: "filling",
+      lastError: undefined,
+      updatedAt: new Date().toISOString(),
+      tinyFishRuns: {
+        ...applicationRecord.tinyFishRuns,
+        extract: extraction.runId
+      }
+    });
 
-  const fillRun = await fillApplicationUntilReview(job, resolvedFields, profile.fullName);
+    const fillRun = await fillApplicationUntilReview(job, resolvedFields, profile.fullName);
 
-  insertApplication({
-    ...baseRecord,
-    fields: resolvedFields,
-    status: "awaiting_approval",
-    updatedAt: new Date().toISOString(),
-    reviewSummary: fillRun.result,
-    tinyFishRuns: {
-      ...baseRecord.tinyFishRuns,
-      extract: extraction.runId,
-      fill: fillRun.runId
-    }
-  });
+    applicationRecord = insertApplication({
+      ...applicationRecord,
+      fields: resolvedFields,
+      status: "awaiting_approval",
+      lastError: undefined,
+      updatedAt: new Date().toISOString(),
+      reviewSummary: fillRun.result,
+      tinyFishRuns: {
+        ...applicationRecord.tinyFishRuns,
+        fill: fillRun.runId
+      }
+    });
 
-  updateJob(jobId, (current) => ({
-    ...current,
-    status: "awaiting_approval",
-    updatedAt: new Date().toISOString()
-  }));
+    updateJob(jobId, (current) => ({
+      ...current,
+      status: "awaiting_approval",
+      updatedAt: new Date().toISOString()
+    }));
 
-  appendActivity("application", `Application draft prepared for ${job.title}. Waiting for human approval.`);
+    appendActivity("application", `Application draft prepared for ${job.title}. Waiting for human approval.`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown application processing error.";
+
+    insertApplication({
+      ...applicationRecord,
+      status: "failed",
+      lastError: message,
+      updatedAt: new Date().toISOString()
+    });
+
+    updateJob(jobId, (current) => ({
+      ...current,
+      status: "failed",
+      updatedAt: new Date().toISOString()
+    }));
+
+    throw error;
+  }
 }
