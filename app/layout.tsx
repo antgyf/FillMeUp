@@ -4,7 +4,7 @@ import { AppShell } from "@/components/app-shell";
 import "@/app/globals.css";
 
 export const metadata: Metadata = {
-  title: "FormPilot",
+  title: "FillMeUp",
   description: "Agentic job application automation with queues, AI reasoning, TinyFish automation, and human approval."
 };
 
