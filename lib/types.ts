@@ -33,6 +33,25 @@ export type ParsedProfile = {
   preferredIndustries: string[];
 };
 
+export type ResumeParseStatus =
+  | "live"
+  | "mock_no_api_key"
+  | "mock_no_resume"
+  | "mock_api_error"
+  | "mock_invalid_json";
+
+export type ResumeParseDiagnostics = {
+  status: ResumeParseStatus;
+  source: "openai" | "mock";
+  model: string;
+  startedAt: string;
+  finishedAt: string;
+  logFile: string;
+  requestId?: string;
+  error?: string;
+  notes?: string;
+};
+
 export type UserProfile = {
   id: string;
   fullName: string;
@@ -45,6 +64,7 @@ export type UserProfile = {
   notes?: string;
   resume?: ResumeAsset;
   parsedProfile: ParsedProfile;
+  parserDiagnostics?: ResumeParseDiagnostics;
   createdAt: string;
   updatedAt: string;
 };

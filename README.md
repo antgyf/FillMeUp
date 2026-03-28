@@ -129,3 +129,8 @@ This MVP keeps the required architecture visible while staying runnable in a bla
 - Discovery uses live LinkedIn searches through TinyFish when available and falls back to a structured local catalog in mock mode.
 - File-backed state is used instead of a database for easy demo setup.
 - TinyFish and OpenAI both support mock mode so the full UX remains testable without paid credentials.
+
+## Authors
+Anthony Goh
+Nicholas Cheok
+Wei Yan

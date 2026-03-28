@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, FormEvent } from "react";
 import { useEffect, useMemo, useState } from "react";
+import type { UserProfile } from "@/lib/types";
 import { useSystemSnapshot } from "@/lib/use-system-snapshot";
 
 type ResumePayload = {
@@ -46,6 +47,7 @@ export function ProfileSetupView() {
   }, [existingProfile]);
 
   const parsedSummary = useMemo(() => existingProfile?.parsedProfile, [existingProfile]);
+  const parserDiagnostics = useMemo(() => existingProfile?.parserDiagnostics, [existingProfile]);
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -77,12 +79,13 @@ export function ProfileSetupView() {
         })
       });
 
+      const payload = (await response.json()) as UserProfile & { error?: string };
+
       if (!response.ok) {
-        const payload = (await response.json()) as { error?: string };
         throw new Error(payload.error ?? "Could not save profile.");
       }
 
-      setStatus("Profile saved and resume parsed.");
+      setStatus(getProfileSaveStatus(payload));
       await refresh();
     } catch (unknownError) {
       setStatus(unknownError instanceof Error ? unknownError.message : "Could not save profile.");
@@ -164,7 +167,7 @@ export function ProfileSetupView() {
               {saving ? "Saving..." : "Save Profile"}
             </button>
           </div>
-          {status ? <p className={status.includes("saved") ? "success-text" : "error-text"}>{status}</p> : null}
+          {status ? <p className={isSuccessStatus(status) ? "success-text" : "error-text"}>{status}</p> : null}
         </form>
       </section>
 
@@ -172,6 +175,42 @@ export function ProfileSetupView() {
         <section className="activity-card">
           <p className="eyebrow">Structured Output</p>
           <strong>Parsed profile JSON</strong>
+          {parserDiagnostics ? (
+            <div className="summary-list" style={{ marginTop: 16 }}>
+              <div className="summary-item">
+                <span className="chip">Parser source</span>
+                <p>{parserDiagnostics.source === "openai" ? "OpenAI live API" : "Mock fallback"}</p>
+              </div>
+              <div className="summary-item">
+                <span className="chip">Parser status</span>
+                <p>{parserDiagnostics.status}</p>
+              </div>
+              <div className="summary-item">
+                <span className="chip">Model</span>
+                <p>{parserDiagnostics.model}</p>
+              </div>
+              <div className="summary-item">
+                <span className="chip">Request ID</span>
+                <p>{parserDiagnostics.requestId ?? "No request ID captured"}</p>
+              </div>
+              <div className="summary-item">
+                <span className="chip">Logs</span>
+                <p>{parserDiagnostics.logFile}</p>
+              </div>
+              {parserDiagnostics.notes ? (
+                <div className="summary-item">
+                  <span className="chip">Notes</span>
+                  <p>{parserDiagnostics.notes}</p>
+                </div>
+              ) : null}
+              {parserDiagnostics.error ? (
+                <div className="summary-item">
+                  <span className="chip">Last error</span>
+                  <p>{parserDiagnostics.error}</p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           {parsedSummary ? (
             <div className="summary-list" style={{ marginTop: 16 }}>
               <div className="summary-item">
@@ -225,4 +264,20 @@ function splitCommaSeparated(value: string) {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function getProfileSaveStatus(profile: Pick<UserProfile, "parserDiagnostics">) {
+  if (profile.parserDiagnostics?.source === "openai") {
+    return "Profile saved and resume parsed with OpenAI.";
+  }
+
+  if (profile.parserDiagnostics) {
+    return `Profile saved, but live resume parsing fell back to mock mode (${profile.parserDiagnostics.status}). Check the parser diagnostics below.`;
+  }
+
+  return "Profile saved.";
+}
+
+function isSuccessStatus(status: string) {
+  return status === "Profile saved." || status.includes("parsed with OpenAI");
 }

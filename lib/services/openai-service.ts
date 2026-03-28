@@ -1,5 +1,6 @@
 import OpenAI from "openai";
-import type { ApplicationField, JobPreferences, JobRecord, UserProfile } from "@/lib/types";
+import { getResumeParserLogFile, logResumeParserEvent } from "@/lib/resume-parser-logger";
+import type { ApplicationField, JobPreferences, JobRecord, ResumeParseDiagnostics, UserProfile } from "@/lib/types";
 
 const model = process.env.OPENAI_MODEL ?? "gpt-5";
 
@@ -23,14 +24,48 @@ export async function parseResumeToProfile(input: {
     base64: string;
   };
 }) {
+  const startedAt = new Date().toISOString();
   const client = getClient();
+  const logFile = getResumeParserLogFile();
 
-  if (!client || !input.resume) {
-    return createMockProfile(input);
+  logResumeParserEvent("info", "parse-started", {
+    hasApiKey: Boolean(process.env.OPENAI_API_KEY),
+    model,
+    hasResume: Boolean(input.resume),
+    resumeFileName: input.resume?.fileName,
+    resumeMimeType: input.resume?.mimeType,
+    resumeBase64Length: input.resume?.base64.length ?? 0
+  });
+
+  if (!client) {
+    logResumeParserEvent("warn", "parse-fallback-no-api-key", { model });
+    return createMockProfile(input, {
+      status: "mock_no_api_key",
+      source: "mock",
+      model,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      logFile,
+      notes: "OPENAI_API_KEY is missing or unreadable on the server."
+    });
+  }
+
+  if (!input.resume) {
+    logResumeParserEvent("warn", "parse-fallback-no-resume", { model });
+    return createMockProfile(input, {
+      status: "mock_no_resume",
+      source: "mock",
+      model,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      logFile,
+      notes: "No resume file was included in the profile payload."
+    });
   }
 
   try {
-    const response = await client.responses.create({
+    const { data: response, request_id: requestId } = await client.responses
+      .create({
       model,
       reasoning: { effort: "low" },
       instructions:
@@ -57,12 +92,13 @@ export async function parseResumeToProfile(input: {
             {
               type: "input_file",
               filename: input.resume.fileName,
-              file_data: input.resume.base64
+              file_data: toDataUrl(input.resume.mimeType, input.resume.base64)
             }
           ]
         }
       ]
-    });
+      })
+      .withResponse();
 
     const parsed = safeJsonParse<{
       headline: string;
@@ -72,9 +108,60 @@ export async function parseResumeToProfile(input: {
       preferredIndustries: string[];
     }>(response.output_text);
 
-    return parsed ? { ...input, parsedProfile: parsed } : createMockProfile(input);
-  } catch {
-    return createMockProfile(input);
+    if (!parsed) {
+      logResumeParserEvent("warn", "parse-fallback-invalid-json", {
+        model,
+        requestId,
+        outputPreview: response.output_text.slice(0, 500)
+      });
+      return createMockProfile(input, {
+        status: "mock_invalid_json",
+        source: "mock",
+        model,
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        logFile,
+        requestId: requestId ?? undefined,
+        notes: "OpenAI responded, but the parser could not extract valid JSON from the response.",
+        error: truncate(response.output_text, 500)
+      });
+    }
+
+    const diagnostics: ResumeParseDiagnostics = {
+      status: "live",
+      source: "openai",
+      model,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      logFile,
+      requestId: requestId ?? undefined,
+      notes: "Resume parsed with a live OpenAI response."
+    };
+
+    logResumeParserEvent("info", "parse-succeeded", {
+      model,
+      requestId,
+      headline: parsed.headline,
+      yearsExperience: parsed.yearsExperience
+    });
+
+    return { ...input, parsedProfile: parsed, parserDiagnostics: diagnostics };
+  } catch (error) {
+    const serializedError = formatError(error);
+    logResumeParserEvent("error", "parse-fallback-api-error", {
+      model,
+      error: serializedError
+    });
+    return createMockProfile(input, {
+      status: "mock_api_error",
+      source: "mock",
+      model,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      logFile,
+      error: serializedError,
+      notes: "The OpenAI request failed before valid parser output was returned."
+    });
   }
 }
 
@@ -153,7 +240,7 @@ function createMockProfile(input: {
     mimeType: string;
     base64: string;
   };
-}) {
+}, parserDiagnostics: ResumeParseDiagnostics) {
   return {
     ...input,
     parsedProfile: {
@@ -168,7 +255,8 @@ function createMockProfile(input: {
         "Shaped roadmap decisions using structured insights"
       ],
       preferredIndustries: ["SaaS", "AI Tooling", "Fintech"]
-    }
+    },
+    parserDiagnostics
   };
 }
 
@@ -231,4 +319,21 @@ function safeJsonParse<T>(value: string) {
 
     return null;
   }
+}
+
+function toDataUrl(mimeType: string | undefined, base64: string) {
+  const normalizedMimeType = mimeType?.trim() || "application/pdf";
+  return `data:${normalizedMimeType};base64,${base64.replace(/\s+/g, "")}`;
+}
+
+function formatError(error: unknown) {
+  if (error instanceof Error) {
+    return truncate(`${error.name}: ${error.message}`, 500);
+  }
+
+  return truncate(String(error), 500);
+}
+
+function truncate(value: string, maxLength: number) {
+  return value.length > maxLength ? `${value.slice(0, maxLength - 3)}...` : value;
 }

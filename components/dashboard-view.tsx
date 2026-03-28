@@ -49,7 +49,7 @@ export function DashboardView() {
           <p className="eyebrow">Mission Control</p>
           <h2>Run the full agent loop with visible queues and explicit approval.</h2>
           <p className="subheading">
-            FormPilot keeps the heavy lifting autonomous, but the final submit action stays human-approved.
+            FillMeUp keeps the heavy lifting autonomous, but the final submit action stays human-approved.
           </p>
         </div>
 
