@@ -9,6 +9,7 @@ export function PreferencesSetupView() {
   const existing = snapshot.preferences;
   const [formState, setFormState] = useState({
     roles: existing?.roles.join(", ") ?? "",
+    companies: existing?.companies?.join(", ") ?? "Shopee",
     industries: existing?.industries.join(", ") ?? "",
     locations: existing?.locations.join(", ") ?? "",
     salaryMin: existing?.salaryRange.min.toString() ?? "90000",
@@ -26,6 +27,7 @@ export function PreferencesSetupView() {
 
     setFormState({
       roles: existing.roles.join(", "),
+      companies: existing.companies?.join(", ") ?? "Shopee",
       industries: existing.industries.join(", "),
       locations: existing.locations.join(", "),
       salaryMin: existing.salaryRange.min.toString(),
@@ -46,6 +48,7 @@ export function PreferencesSetupView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           roles: splitCommaSeparated(formState.roles),
+          companies: splitCommaSeparated(formState.companies),
           industries: splitCommaSeparated(formState.industries),
           locations: splitCommaSeparated(formState.locations),
           salaryRange: {
@@ -85,6 +88,15 @@ export function PreferencesSetupView() {
           <div className="field">
             <label htmlFor="roles">Roles</label>
             <input id="roles" onChange={(event) => setFormState((current) => ({ ...current, roles: event.target.value }))} placeholder="Product Manager, Growth PM, AI Operations Lead" value={formState.roles} />
+          </div>
+          <div className="field">
+            <label htmlFor="companies">Target companies</label>
+            <input
+              id="companies"
+              onChange={(event) => setFormState((current) => ({ ...current, companies: event.target.value }))}
+              placeholder="Shopee"
+              value={formState.companies}
+            />
           </div>
           <div className="field">
             <label htmlFor="industries">Industries</label>
@@ -129,7 +141,7 @@ export function PreferencesSetupView() {
           <div className="summary-list" style={{ marginTop: 16 }}>
             <div className="summary-item">
               <span className="chip">Discovery</span>
-              <p>Roles, locations, and keywords drive live LinkedIn searches when TinyFish is available.</p>
+              <p>Roles, target companies, locations, and keywords drive live LinkedIn searches when TinyFish is available.</p>
             </div>
             <div className="summary-item">
               <span className="chip">Relevance</span>

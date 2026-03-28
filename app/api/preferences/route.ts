@@ -10,6 +10,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const body = (await request.json()) as {
     roles: string[];
+    companies?: string[];
     industries: string[];
     locations: string[];
     salaryRange: {
@@ -20,6 +21,9 @@ export async function POST(request: Request) {
     keywords: string[];
   };
 
-  const preferences = upsertPreferences(body);
+  const preferences = upsertPreferences({
+    ...body,
+    companies: body.companies ?? []
+  });
   return NextResponse.json(preferences);
 }

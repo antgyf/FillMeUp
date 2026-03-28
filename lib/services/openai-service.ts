@@ -264,7 +264,13 @@ function heuristicScore(profile: UserProfile, preferences: JobPreferences, job: 
   const haystack = [job.title, job.company, job.location, job.jobDescription, ...job.keyRequirements]
     .join(" ")
     .toLowerCase();
-  const keywords = [...profile.skills, ...preferences.roles, ...preferences.industries, ...preferences.keywords];
+  const keywords = [
+    ...profile.skills,
+    ...preferences.roles,
+    ...(preferences.companies ?? []),
+    ...preferences.industries,
+    ...preferences.keywords
+  ];
   const matches = keywords.filter((keyword) => haystack.includes(keyword.toLowerCase())).length;
   return Math.min(96, 45 + matches * 8);
 }
