@@ -20,7 +20,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="brand">
           <div className="brand-mark">FP</div>
           <div className="brand-copy">
-            <h1>FormPilot</h1>
+            <h1>FillMeUp</h1>
             <p>Discover, reason, queue, review, submit.</p>
           </div>
         </div>

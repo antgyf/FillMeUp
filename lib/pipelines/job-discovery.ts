@@ -46,7 +46,7 @@ export async function discoverAndQueueJobs(profile: UserProfile, preferences: Jo
       ...job,
       relevanceScore: rankings.find((rankedJob) => rankedJob.jobId === job.id)?.score ?? 0
     }))
-    .filter((job) => job.relevanceScore >= 58)
+    .filter((job) => job.relevanceScore >= 0)
     .sort((left, right) => right.relevanceScore - left.relevanceScore);
 
   insertJobs(rankedJobs);
@@ -70,6 +70,8 @@ export async function discoverAndQueueJobs(profile: UserProfile, preferences: Jo
 
   return {
     queued: rankedJobs.length,
+    mode: "live",
+    notes: ["LinkedIn discovery used the authenticated TinyFish session."],
     topJobs: rankedJobs.slice(0, 5),
     queueSnapshot: getSnapshot().queue
   };

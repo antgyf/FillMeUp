@@ -138,7 +138,7 @@ export function DashboardView() {
           <p className="eyebrow">Mission Control</p>
           <h2>Run the full agent loop with visible queues and explicit approval.</h2>
           <p className="subheading">
-            FormPilot keeps the heavy lifting autonomous, but the final submit action stays human-approved.
+            FillMeUp keeps the heavy lifting autonomous, but the final submit action stays human-approved.
           </p>
         </div>
 
@@ -171,6 +171,10 @@ export function DashboardView() {
           <p>
             TinyFish owns the LinkedIn browser session here. The status only changes when TinyFish actually returns a
             verified authenticated session that can later be reused for scraping.
+          </p>
+          <p className="hint">
+            Discovery uses live LinkedIn search when TinyFish is configured. Otherwise, FormPilot falls back to the
+            local demo catalog and records that in the activity feed.
           </p>
           <div className="inline-actions">
             <button

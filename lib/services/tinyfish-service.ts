@@ -1,8 +1,7 @@
 import crypto from "node:crypto";
 import { mockLinkedInCatalog } from "@/lib/discovery-catalog";
 import { appendDebugLog } from "@/lib/debug-log";
-import type { ApplicationField, JobRecord, ReviewSummary } from "@/lib/types";
-import type { JobPreferences, LinkedInSession, UserProfile } from "@/lib/types";
+import type { ApplicationField, JobRecord, JobPreferences, LinkedInSession, ReviewSummary, UserProfile } from "@/lib/types";
 
 const baseUrl = "https://agent.tinyfish.ai/v1";
 
@@ -16,6 +15,51 @@ type TinyFishAsyncRunResult = {
   interactiveUrl?: string;
 };
 
+type TinyFishRunError = {
+  message?: string;
+  category?: string;
+  code?: string;
+  retry_after?: number;
+  help_url?: string;
+  help_message?: string;
+};
+
+type TinyFishRunDetails<T> = {
+  run_id?: string;
+  status?: "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+  result?: T;
+  error?: TinyFishRunError | null;
+};
+
+type TinyFishAutomationOptions = {
+  browserProfile?: "lite" | "stealth";
+  proxyConfig?: {
+    enabled: boolean;
+    country_code?: string;
+  };
+};
+
+const defaultAsyncPollIntervalMs = 3000;
+const defaultAsyncTimeoutMs = 300000;
+
+function useMockMode() {
+  return !process.env.TINYFISH_API_KEY || process.env.TINYFISH_MODE === "mock";
+}
+
+export function isTinyFishMockMode() {
+  return useMockMode();
+}
+
+function requireLiveTinyFish(action: string) {
+  if (useMockMode()) {
+    appendDebugLog("tinyfish-debug.log", "tinyfish.live_required_failed", {
+      action,
+      reason: "missing_api_key_or_mock_mode"
+    });
+    throw new Error(`TinyFish is not configured for ${action}. Add TINYFISH_API_KEY in .env.local and restart the app.`);
+  }
+}
+
 function sanitizePayloadForLogs(payload: Record<string, unknown>) {
   const clone = JSON.parse(JSON.stringify(payload)) as Record<string, unknown>;
 
@@ -28,18 +72,42 @@ function sanitizePayloadForLogs(payload: Record<string, unknown>) {
   return clone;
 }
 
-function useMockMode() {
-  return !process.env.TINYFISH_API_KEY || process.env.TINYFISH_MODE === "mock";
-}
+async function requestTinyFish(method: "GET" | "POST", path: string, payload?: Record<string, unknown>) {
+  let response: Response;
 
-function requireLiveTinyFish(action: string) {
-  if (useMockMode()) {
-    appendDebugLog("tinyfish-debug.log", "tinyfish.live_required_failed", {
-      action,
-      reason: "missing_api_key_or_mock_mode"
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        ...(payload ? { "Content-Type": "application/json" } : {}),
+        "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
+      },
+      ...(payload ? { body: JSON.stringify(payload) } : {})
     });
-    throw new Error(`TinyFish is not configured for ${action}. Add TINYFISH_API_KEY in .env.local and restart the app.`);
+  } catch (error) {
+    const detail = getErrorDetail(error);
+    appendDebugLog("tinyfish-debug.log", "tinyfish.request_network_failed", {
+      method,
+      path,
+      detail
+    });
+    throw new Error(`TinyFish request failed before a response was received. ${detail}`);
   }
+
+  if (!response.ok) {
+    const responseBody = await response.text().catch(() => "");
+    appendDebugLog("tinyfish-debug.log", "tinyfish.request_failed", {
+      method,
+      path,
+      status: response.status,
+      body: responseBody.slice(0, 500)
+    });
+    throw new Error(
+      `TinyFish request failed with status ${response.status}.${responseBody ? ` Response: ${responseBody.slice(0, 200)}` : ""}`
+    );
+  }
+
+  return response;
 }
 
 async function runTinyFish<T>(path: string, payload: Record<string, unknown>, fallback: T): Promise<TinyFishRunResult<T>> {
@@ -56,23 +124,7 @@ async function runTinyFish<T>(path: string, payload: Record<string, unknown>, fa
     payload: sanitizePayloadForLogs(payload)
   });
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    appendDebugLog("tinyfish-debug.log", "tinyfish.request_failed", {
-      path,
-      status: response.status
-    });
-    throw new Error(`TinyFish request failed with status ${response.status}.`);
-  }
-
+  const response = await requestTinyFish("POST", path, payload);
   const data = (await response.json()) as {
     run_id?: string;
     result?: T;
@@ -95,23 +147,7 @@ async function runTinyFishAsync(path: string, payload: Record<string, unknown>):
     payload: sanitizePayloadForLogs(payload)
   });
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
-    },
-    body: JSON.stringify(payload)
-  });
-
-  if (!response.ok) {
-    appendDebugLog("tinyfish-debug.log", "tinyfish.async_request_failed", {
-      path,
-      status: response.status
-    });
-    throw new Error(`TinyFish async request failed with status ${response.status}.`);
-  }
-
+  const response = await requestTinyFish("POST", path, payload);
   const data = (await response.json()) as {
     run_id?: string;
     session_url?: string;
@@ -151,23 +187,7 @@ export async function getTinyFishRun(runId: string) {
 
   appendDebugLog("tinyfish-debug.log", "tinyfish.get_run_started", { runId });
 
-  const response = await fetch(`${baseUrl}/runs/batch`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
-    },
-    body: JSON.stringify({ run_ids: [runId] })
-  });
-
-  if (!response.ok) {
-    appendDebugLog("tinyfish-debug.log", "tinyfish.get_run_failed", {
-      runId,
-      status: response.status
-    });
-    throw new Error(`TinyFish run polling failed with status ${response.status}.`);
-  }
-
+  const response = await requestTinyFish("POST", "/runs/batch", { run_ids: [runId] });
   const data = (await response.json()) as {
     data?: Array<{
       run_id?: string;
@@ -196,13 +216,135 @@ export async function getTinyFishRun(runId: string) {
   };
 }
 
+export async function runTinyFishAutomation<T>(
+  payload: Record<string, unknown>,
+  fallback: T,
+  options?: TinyFishAutomationOptions
+) {
+  return runTinyFish("/automation/run", buildAutomationPayload(payload, options), fallback);
+}
+
+export async function runTinyFishAutomationAsync<T>(
+  payload: Record<string, unknown>,
+  fallback: T,
+  options?: TinyFishAutomationOptions
+) {
+  if (useMockMode()) {
+    appendDebugLog("tinyfish-debug.log", "tinyfish.mock_fallback", {
+      path: "/automation/run-async",
+      payload: sanitizePayloadForLogs(buildAutomationPayload(payload, options))
+    });
+    return { runId: `mock-${crypto.randomUUID()}`, result: fallback };
+  }
+
+  const asyncPayload = buildAutomationPayload(payload, options);
+  appendDebugLog("tinyfish-debug.log", "tinyfish.async_request_started", {
+    path: "/automation/run-async",
+    payload: sanitizePayloadForLogs(asyncPayload)
+  });
+
+  const response = await requestTinyFish("POST", "/automation/run-async", asyncPayload);
+  const data = (await response.json()) as {
+    run_id?: string | null;
+    error?: TinyFishRunError | null;
+  };
+
+  if (!data.run_id) {
+    throw new Error(`TinyFish async run did not return a run_id.${formatTinyFishError(data.error)}`);
+  }
+
+  appendDebugLog("tinyfish-debug.log", "tinyfish.async_request_completed", {
+    path: "/automation/run-async",
+    runId: data.run_id,
+    interactiveUrl: null
+  });
+
+  return pollTinyFishRunUntilComplete<T>(data.run_id, fallback);
+}
+
+function buildAutomationPayload(payload: Record<string, unknown>, options?: TinyFishAutomationOptions) {
+  return {
+    ...payload,
+    browser_profile: options?.browserProfile ?? "lite",
+    api_integration: "formpilot",
+    ...(options?.proxyConfig ? { proxy_config: options.proxyConfig } : {})
+  };
+}
+
+async function pollTinyFishRunUntilComplete<T>(runId: string, fallback: T): Promise<TinyFishRunResult<T>> {
+  const timeoutAt = Date.now() + getAsyncTimeoutMs();
+
+  while (Date.now() < timeoutAt) {
+    const response = await requestTinyFish("GET", `/runs/${runId}`);
+    const run = (await response.json()) as TinyFishRunDetails<T>;
+    const status = run.status ?? "PENDING";
+
+    if (status === "COMPLETED") {
+      return { runId, result: run.result ?? fallback };
+    }
+
+    if (status === "FAILED" || status === "CANCELLED") {
+      throw new Error(`TinyFish async run ${status.toLowerCase()}.${formatTinyFishError(run.error)}`);
+    }
+
+    await delay(getAsyncPollIntervalMs());
+  }
+
+  throw new Error(`TinyFish async run timed out after ${Math.round(getAsyncTimeoutMs() / 1000)} seconds.`);
+}
+
+function formatTinyFishError(error: TinyFishRunError | null | undefined) {
+  if (!error) {
+    return "";
+  }
+
+  const detail = [error.code, error.message].filter(Boolean).join(": ");
+  return detail ? ` ${detail}` : "";
+}
+
+function getAsyncPollIntervalMs() {
+  return getPositiveInteger(process.env.TINYFISH_ASYNC_POLL_INTERVAL_MS, defaultAsyncPollIntervalMs);
+}
+
+function getAsyncTimeoutMs() {
+  return getPositiveInteger(process.env.TINYFISH_ASYNC_TIMEOUT_MS, defaultAsyncTimeoutMs);
+}
+
+function getPositiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getErrorDetail(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Unknown network error.";
+  }
+
+  const cause = error.cause;
+
+  if (cause && typeof cause === "object") {
+    const code = "code" in cause && typeof cause.code === "string" ? cause.code : null;
+    const message = "message" in cause && typeof cause.message === "string" ? cause.message : null;
+    const combined = [code, message].filter(Boolean).join(": ");
+
+    if (combined) {
+      return `${error.message}. Cause: ${combined}`;
+    }
+  }
+
+  return error.message;
+}
+
 export async function extractJobFromListing(job: JobRecord) {
   appendDebugLog("tinyfish-debug.log", "tinyfish.extract_job_from_listing", {
     jobId: job.id,
     listingUrl: job.listingUrl
   });
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomationAsync(
     {
       url: job.listingUrl,
       goal:
@@ -216,6 +358,9 @@ export async function extractJobFromListing(job: JobRecord) {
       jobDescription: job.jobDescription,
       applicationUrl: job.applicationUrl,
       keyRequirements: job.keyRequirements
+    },
+    {
+      browserProfile: "lite"
     }
   );
 }
@@ -234,15 +379,11 @@ export async function startLinkedInLogin(profile?: UserProfile) {
     throw new Error("Set LINKEDIN_EMAIL and LINKEDIN_PASSWORD in .env.local before testing credential-based LinkedIn login.");
   }
 
-  return runTinyFishAsync(
-    "/automation/run-async",
-    {
-      url: "https://www.linkedin.com/login",
-      browser_profile: "stealth",
-      goal:
-        `1. Login with username '${linkedInEmail}' and password '${linkedInPassword}'. 2. Navigate to the LinkedIn Jobs page after login. 3. Return JSON with sessionOwner and jobsUrl.`
-    }
-  );
+  return runTinyFishAsync("/automation/run-async", {
+    url: "https://www.linkedin.com/login",
+    browser_profile: "stealth",
+    goal: `1. Login with username '${linkedInEmail}' and password '${linkedInPassword}'. 2. Navigate to the LinkedIn Jobs page after login. 3. Return JSON with sessionOwner and jobsUrl.`
+  });
 }
 
 export async function scrapeLinkedInJobs(session: LinkedInSession, preferences: JobPreferences) {
@@ -261,8 +402,7 @@ export async function scrapeLinkedInJobs(session: LinkedInSession, preferences: 
     preferences
   });
 
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomation(
     {
       url: session.jobsUrl,
       linkedInSessionRunId: session.tinyFishRunId,
@@ -270,7 +410,10 @@ export async function scrapeLinkedInJobs(session: LinkedInSession, preferences: 
         preferences
       )}. Return JSON with jobs:[{title,company,location,listingUrl,applicationUrl,employmentType,industries,keywords,jobDescription,keyRequirements}].`
     },
-    { jobs: fallbackJobs }
+    { jobs: fallbackJobs },
+    {
+      browserProfile: "stealth"
+    }
   );
 }
 
@@ -279,14 +422,16 @@ export async function extractApplicationFields(job: JobRecord) {
     jobId: job.id,
     applicationUrl: job.applicationUrl
   });
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomationAsync(
     {
       url: job.applicationUrl,
       goal:
         "Inspect this job application and extract the visible fields without submitting. Return JSON with fields[]. Each field should include fieldId, label, fieldType, required, step, placeholder, and options."
     },
-    { fields: mockFieldsForJob(job) }
+    { fields: mockFieldsForJob(job) },
+    {
+      browserProfile: "lite"
+    }
   );
 }
 
@@ -297,15 +442,17 @@ export async function fillApplicationUntilReview(job: JobRecord, fields: Applica
     fieldCount: fields.length,
     candidateName
   });
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomationAsync(
     {
       url: job.applicationUrl,
       goal: `Fill this job application using these answers ${JSON.stringify(
         fields.map((field) => ({ label: field.label, answer: field.answer }))
       )}. Handle multi-step navigation and stop at the final confirmation screen. Do not submit. Return JSON with confirmationTitle, previewLines, and finalActionLabel.`
     },
-    buildReviewSummary(job, candidateName, fields)
+    buildReviewSummary(job, candidateName, fields),
+    {
+      browserProfile: "lite"
+    }
   );
 }
 
@@ -315,8 +462,7 @@ export async function submitReviewedApplication(job: JobRecord, fields: Applicat
     applicationUrl: job.applicationUrl,
     fieldCount: fields.length
   });
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomationAsync(
     {
       url: job.applicationUrl,
       goal: `Navigate to the final confirmation step and submit the approved application using these answers ${JSON.stringify(
@@ -327,6 +473,9 @@ export async function submitReviewedApplication(job: JobRecord, fields: Applicat
       submitted: true,
       finalActionLabel: "Submit application",
       fieldsSubmitted: fields.length
+    },
+    {
+      browserProfile: "lite"
     }
   );
 }
@@ -408,12 +557,7 @@ function mockFieldsForJob(job: JobRecord): ApplicationField[] {
 }
 
 function buildMockDiscoveryResults(preferences: JobPreferences) {
-  const preferenceTerms = [
-    ...preferences.roles,
-    ...preferences.industries,
-    ...preferences.locations,
-    ...preferences.keywords
-  ]
+  const preferenceTerms = [...preferences.roles, ...preferences.industries, ...preferences.locations, ...preferences.keywords]
     .map((term) => term.toLowerCase())
     .filter(Boolean);
 

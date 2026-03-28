@@ -5,7 +5,7 @@ export default function HomePage() {
     <main className="hero-grid">
       <section className="hero-card">
         <p className="eyebrow">Agentic Job Application Pipeline</p>
-        <h1>FormPilot turns job hunting into a supervised automation system.</h1>
+        <h1>FillMeUp turns job hunting into a supervised automation system.</h1>
         <p className="hero-copy">
           Collect a structured candidate profile, discover LinkedIn roles, run them through a scraping queue,
           autofill applications with OpenAI reasoning plus TinyFish browser automation, and require human

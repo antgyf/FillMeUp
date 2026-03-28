@@ -14,10 +14,24 @@ export function ReviewView({ applicationId }: { applicationId: string }) {
     void loadApplication();
   }, [applicationId]);
 
+  useEffect(() => {
+    if (!application || isTerminalStatus(application.status)) {
+      return;
+    }
+
+    const timer = window.setInterval(() => {
+      void loadApplication({ silent: true });
+    }, 4000);
+
+    return () => window.clearInterval(timer);
+  }, [application]);
+
   const reviewReady = useMemo(() => application?.status === "awaiting_approval", [application]);
 
-  async function loadApplication() {
-    setLoading(true);
+  async function loadApplication(options?: { silent?: boolean }) {
+    if (!options?.silent) {
+      setLoading(true);
+    }
 
     try {
       const response = await fetch(`/api/applications/${applicationId}`);
@@ -31,7 +45,9 @@ export function ReviewView({ applicationId }: { applicationId: string }) {
     } catch (unknownError) {
       setStatus(unknownError instanceof Error ? unknownError.message : "Could not load application.");
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }
 
@@ -131,6 +147,12 @@ export function ReviewView({ applicationId }: { applicationId: string }) {
           {application.tinyFishRuns.fill ? <span className="chip">TinyFish fill run: {application.tinyFishRuns.fill}</span> : null}
           {application.tinyFishRuns.submit ? <span className="chip">Submit run: {application.tinyFishRuns.submit}</span> : null}
         </div>
+        {!reviewReady && application.status !== "failed" ? (
+          <p className="hint">
+            FormPilot is still preparing this application. This page refreshes automatically while the agent is running.
+          </p>
+        ) : null}
+        {application.lastError ? <p className="error-text">{application.lastError}</p> : null}
 
         <div className="field-grid" style={{ marginTop: 22 }}>
           {application.fields.map((field, index) => (
@@ -168,6 +190,15 @@ export function ReviewView({ applicationId }: { applicationId: string }) {
             </div>
           ))}
         </div>
+        {!application.fields.length ? (
+          <div className="empty-card" style={{ marginTop: 22 }}>
+            <p className="copy-muted">
+              {application.status === "failed"
+                ? "No review fields were prepared because the automation failed before extraction completed."
+                : "Form fields will appear here once TinyFish finishes extracting the application schema."}
+            </p>
+          </div>
+        ) : null}
 
         <div className="form-actions">
           <button className="button-secondary" onClick={saveDraft} type="button">
@@ -214,4 +245,8 @@ export function ReviewView({ applicationId }: { applicationId: string }) {
       </aside>
     </main>
   );
+}
+
+function isTerminalStatus(status: ApplicationRecord["status"]) {
+  return status === "awaiting_approval" || status === "submitted" || status === "failed";
 }
