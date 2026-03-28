@@ -1,4 +1,5 @@
 export type QueueStatus = "queued" | "running" | "completed" | "failed";
+export type LinkedInSessionStatus = "connecting" | "connected" | "expired";
 export type JobStatus =
   | "discovered"
   | "scraping"
@@ -82,6 +83,19 @@ export type JobPreferences = {
   updatedAt: string;
 };
 
+export type LinkedInSession = {
+  status: LinkedInSessionStatus;
+  sessionOwner: string;
+  jobsUrl: string;
+  connectedAt: string;
+  updatedAt: string;
+  lastSyncedAt?: string;
+  tinyFishRunId?: string;
+  tinyFishRunStatus?: string;
+  loginUrl?: string;
+  lastError?: string;
+};
+
 export type JobRecord = {
   id: string;
   source: "linkedin";
@@ -162,6 +176,7 @@ export type ActivityEvent = {
 export type FormPilotState = {
   profile: UserProfile | null;
   preferences: JobPreferences | null;
+  linkedinSession: LinkedInSession | null;
   jobs: JobRecord[];
   applications: ApplicationRecord[];
   queue: {

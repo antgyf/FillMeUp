@@ -1,16 +1,29 @@
 import crypto from "node:crypto";
+import { appendDebugLog } from "@/lib/debug-log";
 import { enqueueJobScrapingQueue, ensureQueuesStarted } from "@/lib/queue-manager";
-import { discoverLinkedInJobs } from "@/lib/services/linkedin-discovery-service";
 import { rankJobsForProfile } from "@/lib/services/openai-service";
-import { appendActivity, getSnapshot, insertJobs } from "@/lib/store";
-import type { JobPreferences, JobRecord, UserProfile } from "@/lib/types";
+import { scrapeLinkedInJobs } from "@/lib/services/tinyfish-service";
+import { appendActivity, getSnapshot, insertJobs, upsertLinkedInSession } from "@/lib/store";
+import type { JobPreferences, JobRecord, LinkedInSession, UserProfile } from "@/lib/types";
 
-export async function discoverAndQueueJobs(profile: UserProfile, preferences: JobPreferences) {
+export async function discoverAndQueueJobs(profile: UserProfile, preferences: JobPreferences, linkedinSession: LinkedInSession | null) {
   ensureQueuesStarted();
+  appendDebugLog("linkedin-debug.log", "linkedin.discovery_started", {
+    profileId: profile.id,
+    linkedinSessionStatus: linkedinSession?.status ?? null,
+    tinyFishRunId: linkedinSession?.tinyFishRunId ?? null
+  });
 
-  const discovery = await discoverLinkedInJobs(preferences);
+  if (!linkedinSession || linkedinSession.status !== "connected") {
+    appendDebugLog("linkedin-debug.log", "linkedin.discovery_blocked", {
+      reason: "missing_or_unconnected_session"
+    });
+    throw new Error("Log in to LinkedIn before running discovery.");
+  }
 
-  const seededJobs = discovery.jobs.map<JobRecord>((seed) => ({
+  const scraped = await scrapeLinkedInJobs(linkedinSession, preferences);
+
+  const seededJobs = scraped.result.jobs.map<JobRecord>((seed) => ({
     id: crypto.randomUUID(),
     source: "linkedin",
     title: seed.title,
@@ -42,18 +55,23 @@ export async function discoverAndQueueJobs(profile: UserProfile, preferences: Jo
     enqueueJobScrapingQueue(job.id, `${job.title} @ ${job.company}`);
   }
 
-  appendActivity(
-    "discovery",
-    `Discovered ${rankedJobs.length} LinkedIn roles via ${discovery.mode === "live" ? "live TinyFish search" : "fallback seed catalog"} and queued them for scraping.`
-  );
-  for (const note of discovery.notes) {
-    appendActivity("discovery", note);
-  }
+  upsertLinkedInSession({
+    ...linkedinSession,
+    lastSyncedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    tinyFishRunId: scraped.runId
+  });
+
+  appendActivity("discovery", `Scraped ${rankedJobs.length} jobs from the user's LinkedIn session and queued them for enrichment.`);
+  appendDebugLog("linkedin-debug.log", "linkedin.discovery_completed", {
+    queued: rankedJobs.length,
+    topJobTitles: rankedJobs.slice(0, 5).map((job) => job.title)
+  });
 
   return {
     queued: rankedJobs.length,
-    mode: discovery.mode,
-    notes: discovery.notes,
+    mode: "live",
+    notes: ["LinkedIn discovery used the authenticated TinyFish session."],
     topJobs: rankedJobs.slice(0, 5),
     queueSnapshot: getSnapshot().queue
   };

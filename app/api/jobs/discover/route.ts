@@ -14,6 +14,13 @@ export async function POST() {
     );
   }
 
-  const result = await discoverAndQueueJobs(snapshot.profile, snapshot.preferences);
+  if (!snapshot.linkedinSession || snapshot.linkedinSession.status !== "connected") {
+    return NextResponse.json(
+      { error: "Log in to LinkedIn before scraping jobs." },
+      { status: 400 }
+    );
+  }
+
+  const result = await discoverAndQueueJobs(snapshot.profile, snapshot.preferences, snapshot.linkedinSession);
   return NextResponse.json(result);
 }
