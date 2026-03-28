@@ -1,4 +1,4 @@
-# FormPilot
+# FillMeUp
 
 FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, authenticates a LinkedIn session for discovery, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
 
