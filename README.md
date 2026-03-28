@@ -1,6 +1,6 @@
 # FormPilot
 
-FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, simulates LinkedIn discovery, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
+FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, discovers LinkedIn jobs, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
 
 ## What it includes
 
@@ -37,7 +37,7 @@ FormPilot is a full-stack, agentic job application automation system built with 
    - Save candidate identity, skills, notes, and resume PDF
    - Parse structured profile JSON with OpenAI when `OPENAI_API_KEY` is configured
 2. Job discovery
-   - Generate a structured LinkedIn-style candidate listing set from preferences
+   - Run live LinkedIn job searches from the user's saved preferences when TinyFish is configured
    - Rank relevance with OpenAI or a local heuristic fallback
    - Push jobs into the job scraping queue
 3. Job scraping queue
@@ -96,6 +96,9 @@ OPENAI_MODEL=gpt-5
 TINYFISH_API_KEY=your_tinyfish_key
 # Optional:
 TINYFISH_MODE=mock
+LINKEDIN_DISCOVERY_MODE=mock
+LINKEDIN_DISCOVERY_MAX_QUERIES=6
+LINKEDIN_DISCOVERY_RESULTS_PER_QUERY=5
 ```
 
 If `OPENAI_API_KEY` or `TINYFISH_API_KEY` is missing, FormPilot still runs in a local demo mode with clear mock fallbacks.
@@ -123,6 +126,6 @@ Open [http://localhost:3000](http://localhost:3000).
 This MVP keeps the required architecture visible while staying runnable in a blank repo:
 
 - The queues are implemented in-process and can be replaced with BullMQ plus Redis later.
-- Discovery currently uses a structured LinkedIn-style catalog instead of live scraping.
+- Discovery uses live LinkedIn searches through TinyFish when available and falls back to a structured local catalog in mock mode.
 - File-backed state is used instead of a database for easy demo setup.
 - TinyFish and OpenAI both support mock mode so the full UX remains testable without paid credentials.

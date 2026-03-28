@@ -8,8 +8,20 @@ type TinyFishRunResult<T> = {
   result: T;
 };
 
+type TinyFishAutomationOptions = {
+  browserProfile?: "lite" | "stealth";
+  proxyConfig?: {
+    enabled: boolean;
+    country_code?: string;
+  };
+};
+
 function useMockMode() {
   return !process.env.TINYFISH_API_KEY || process.env.TINYFISH_MODE === "mock";
+}
+
+export function isTinyFishMockMode() {
+  return useMockMode();
 }
 
 async function runTinyFish<T>(path: string, payload: Record<string, unknown>, fallback: T): Promise<TinyFishRunResult<T>> {
@@ -17,17 +29,38 @@ async function runTinyFish<T>(path: string, payload: Record<string, unknown>, fa
     return { runId: `mock-${crypto.randomUUID()}`, result: fallback };
   }
 
-  const response = await fetch(`${baseUrl}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
-    },
-    body: JSON.stringify(payload)
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": process.env.TINYFISH_API_KEY ?? ""
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    const detail = getErrorDetail(error);
+    console.error("TinyFish request failed before a response was received.", {
+      path,
+      url: `${baseUrl}${path}`,
+      detail
+    });
+    throw new Error(`TinyFish request failed before a response was received. ${detail}`);
+  }
 
   if (!response.ok) {
-    throw new Error(`TinyFish request failed with status ${response.status}.`);
+    const responseBody = await response.text().catch(() => "");
+    console.error("TinyFish request returned a non-OK response.", {
+      path,
+      url: `${baseUrl}${path}`,
+      status: response.status,
+      body: responseBody.slice(0, 500)
+    });
+    throw new Error(
+      `TinyFish request failed with status ${response.status}.${responseBody ? ` Response: ${responseBody.slice(0, 200)}` : ""}`
+    );
   }
 
   const data = (await response.json()) as {
@@ -38,9 +71,45 @@ async function runTinyFish<T>(path: string, payload: Record<string, unknown>, fa
   return { runId: data.run_id ?? `unknown-${crypto.randomUUID()}`, result: data.result ?? fallback };
 }
 
-export async function extractJobFromListing(job: JobRecord) {
+export async function runTinyFishAutomation<T>(
+  payload: Record<string, unknown>,
+  fallback: T,
+  options?: TinyFishAutomationOptions
+) {
   return runTinyFish(
     "/automation/run",
+    {
+      ...payload,
+      browser_profile: options?.browserProfile ?? "lite",
+      api_integration: "formpilot",
+      ...(options?.proxyConfig ? { proxy_config: options.proxyConfig } : {})
+    },
+    fallback
+  );
+}
+
+function getErrorDetail(error: unknown) {
+  if (!(error instanceof Error)) {
+    return "Unknown network error.";
+  }
+
+  const cause = error.cause;
+
+  if (cause && typeof cause === "object") {
+    const code = "code" in cause && typeof cause.code === "string" ? cause.code : null;
+    const message = "message" in cause && typeof cause.message === "string" ? cause.message : null;
+    const combined = [code, message].filter(Boolean).join(": ");
+
+    if (combined) {
+      return `${error.message}. Cause: ${combined}`;
+    }
+  }
+
+  return error.message;
+}
+
+export async function extractJobFromListing(job: JobRecord) {
+  return runTinyFishAutomation(
     {
       url: job.listingUrl,
       goal:
@@ -59,8 +128,7 @@ export async function extractJobFromListing(job: JobRecord) {
 }
 
 export async function extractApplicationFields(job: JobRecord) {
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomation(
     {
       url: job.applicationUrl,
       goal:
@@ -71,8 +139,7 @@ export async function extractApplicationFields(job: JobRecord) {
 }
 
 export async function fillApplicationUntilReview(job: JobRecord, fields: ApplicationField[], candidateName: string) {
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomation(
     {
       url: job.applicationUrl,
       goal: `Fill this job application using these answers ${JSON.stringify(
@@ -84,8 +151,7 @@ export async function fillApplicationUntilReview(job: JobRecord, fields: Applica
 }
 
 export async function submitReviewedApplication(job: JobRecord, fields: ApplicationField[]) {
-  return runTinyFish(
-    "/automation/run",
+  return runTinyFishAutomation(
     {
       url: job.applicationUrl,
       goal: `Navigate to the final confirmation step and submit the approved application using these answers ${JSON.stringify(

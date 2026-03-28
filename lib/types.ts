@@ -163,3 +163,12 @@ export type JobSeed = {
   jobDescription: string;
   keyRequirements: string[];
 };
+
+export type DiscoveryMode = "live" | "mock";
+
+export type JobDiscoveryResult = {
+  jobs: JobSeed[];
+  mode: DiscoveryMode;
+  queryCount: number;
+  notes: string[];
+};

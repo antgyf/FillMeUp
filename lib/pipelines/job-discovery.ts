@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
-import { mockLinkedInCatalog } from "@/lib/discovery-catalog";
 import { enqueueJobScrapingQueue, ensureQueuesStarted } from "@/lib/queue-manager";
+import { discoverLinkedInJobs } from "@/lib/services/linkedin-discovery-service";
 import { rankJobsForProfile } from "@/lib/services/openai-service";
 import { appendActivity, getSnapshot, insertJobs } from "@/lib/store";
 import type { JobPreferences, JobRecord, UserProfile } from "@/lib/types";
@@ -8,7 +8,9 @@ import type { JobPreferences, JobRecord, UserProfile } from "@/lib/types";
 export async function discoverAndQueueJobs(profile: UserProfile, preferences: JobPreferences) {
   ensureQueuesStarted();
 
-  const seededJobs = mockLinkedInCatalog.map<JobRecord>((seed) => ({
+  const discovery = await discoverLinkedInJobs(preferences);
+
+  const seededJobs = discovery.jobs.map<JobRecord>((seed) => ({
     id: crypto.randomUUID(),
     source: "linkedin",
     title: seed.title,
@@ -40,10 +42,18 @@ export async function discoverAndQueueJobs(profile: UserProfile, preferences: Jo
     enqueueJobScrapingQueue(job.id, `${job.title} @ ${job.company}`);
   }
 
-  appendActivity("discovery", `Discovered ${rankedJobs.length} LinkedIn-style roles and queued them for scraping.`);
+  appendActivity(
+    "discovery",
+    `Discovered ${rankedJobs.length} LinkedIn roles via ${discovery.mode === "live" ? "live TinyFish search" : "fallback seed catalog"} and queued them for scraping.`
+  );
+  for (const note of discovery.notes) {
+    appendActivity("discovery", note);
+  }
 
   return {
     queued: rankedJobs.length,
+    mode: discovery.mode,
+    notes: discovery.notes,
     topJobs: rankedJobs.slice(0, 5),
     queueSnapshot: getSnapshot().queue
   };
