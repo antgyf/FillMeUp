@@ -8,6 +8,7 @@ const defaultResultsPerQuery = 5;
 type SearchQuery = {
   keyword: string;
   location: string;
+  company?: string;
 };
 
 type ExtractedLinkedInJob = Partial<JobSeed>;
@@ -16,7 +17,11 @@ export async function discoverLinkedInJobs(preferences: JobPreferences): Promise
   const queryPlan = buildSearchPlan(preferences).slice(0, getMaxQueries());
 
   if (process.env.LINKEDIN_DISCOVERY_MODE === "mock" || isTinyFishMockMode()) {
-    return buildMockResult(queryPlan.length, "LinkedIn discovery is running in fallback mode because TinyFish live automation is not configured.");
+    return buildMockResult(
+      queryPlan.length,
+      "LinkedIn discovery is running in fallback mode because TinyFish live automation is not configured.",
+      preferences
+    );
   }
 
   try {
@@ -49,7 +54,8 @@ export async function discoverLinkedInJobs(preferences: JobPreferences): Promise
     if (uniqueJobs.length === 0) {
       return buildMockResult(
         queryPlan.length,
-        "Live LinkedIn discovery ran but returned no visible jobs, so FormPilot fell back to the local seed catalog."
+        "Live LinkedIn discovery ran but returned no visible jobs, so FormPilot fell back to the local seed catalog.",
+        preferences
       );
     }
 
@@ -67,7 +73,11 @@ export async function discoverLinkedInJobs(preferences: JobPreferences): Promise
       message,
       queryPlan
     });
-    return buildMockResult(queryPlan.length, `Live LinkedIn discovery failed and FormPilot fell back to the local seed catalog. ${message}`);
+    return buildMockResult(
+      queryPlan.length,
+      `Live LinkedIn discovery failed and FormPilot fell back to the local seed catalog. ${message}`,
+      preferences
+    );
   }
 }
 
@@ -75,12 +85,15 @@ function buildSearchPlan(preferences: JobPreferences) {
   const roles = preferences.roles.length ? preferences.roles : ["Product Manager"];
   const locations = preferences.locations.length ? preferences.locations : ["Remote"];
   const keywordTail = preferences.keywords.slice(0, 2);
+  const companies = getTargetCompanies(preferences);
   const queries: SearchQuery[] = [];
 
   for (const role of roles.slice(0, 3)) {
     for (const location of locations.slice(0, 3)) {
-      const keyword = [role, ...keywordTail].join(" ").trim();
-      queries.push({ keyword, location });
+      for (const company of companies) {
+        const keyword = [role, company, ...keywordTail].join(" ").trim();
+        queries.push({ keyword, location, company });
+      }
     }
   }
 
@@ -90,7 +103,7 @@ function buildSearchPlan(preferences: JobPreferences) {
 function dedupeQueries(queries: SearchQuery[]) {
   const seen = new Set<string>();
   return queries.filter((query) => {
-    const key = `${query.keyword.toLowerCase()}::${query.location.toLowerCase()}`;
+    const key = `${query.keyword.toLowerCase()}::${query.location.toLowerCase()}::${(query.company ?? "").toLowerCase()}`;
     if (seen.has(key)) {
       return false;
     }
@@ -120,6 +133,12 @@ function normalizeJob(job: ExtractedLinkedInJob, preferences: JobPreferences, qu
 
   const title = job.title.trim();
   const company = job.company.trim();
+  const targetCompanies = getTargetCompanies(preferences);
+
+  if (targetCompanies.length > 0 && !matchesCompanyTarget(company, targetCompanies)) {
+    return null;
+  }
+
   const location = job.location?.trim() || query.location;
   const listingUrl = sanitizeLinkedInUrl(job.listingUrl.trim());
   const applicationUrl = job.applicationUrl?.trim() || listingUrl;
@@ -173,13 +192,33 @@ function dedupeJobs(jobs: JobSeed[]) {
   return Array.from(byListingUrl.values());
 }
 
-function buildMockResult(queryCount: number, note: string): JobDiscoveryResult {
+function buildMockResult(queryCount: number, note: string, preferences?: JobPreferences): JobDiscoveryResult {
+  const targetCompanies = preferences ? getTargetCompanies(preferences) : [];
+  const jobs =
+    targetCompanies.length > 0
+      ? mockLinkedInCatalog.filter((job) => matchesCompanyTarget(job.company, targetCompanies))
+      : mockLinkedInCatalog;
+
   return {
-    jobs: mockLinkedInCatalog,
+    jobs,
     mode: "mock",
     queryCount,
     notes: [note]
   };
+}
+
+function getTargetCompanies(preferences: JobPreferences) {
+  const companies = Array.isArray(preferences.companies) ? preferences.companies : [];
+  const cleaned = companies.map((company) => company.trim()).filter(Boolean);
+  return cleaned.length ? cleaned.slice(0, 3) : ["Shopee"];
+}
+
+function matchesCompanyTarget(company: string, targets: string[]) {
+  const normalizedCompany = company.trim().toLowerCase();
+  return targets.some((target) => {
+    const normalizedTarget = target.trim().toLowerCase();
+    return normalizedCompany.includes(normalizedTarget) || normalizedTarget.includes(normalizedCompany);
+  });
 }
 
 function getMaxQueries() {

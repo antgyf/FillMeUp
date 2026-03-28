@@ -2,6 +2,32 @@ import type { JobSeed } from "@/lib/types";
 
 export const mockLinkedInCatalog: JobSeed[] = [
   {
+    title: "Product Manager, Growth",
+    company: "Shopee",
+    location: "Singapore",
+    listingUrl: "https://www.linkedin.com/jobs/view/20001",
+    applicationUrl: "https://careers.shopee.sg/job-detail/20001",
+    employmentType: "Full-time",
+    industries: ["E-commerce", "Consumer Internet"],
+    keywords: ["growth", "experimentation", "marketplace", "product strategy"],
+    jobDescription:
+      "Own growth initiatives across the marketplace funnel, partner with engineering and analytics, and translate user behavior into product bets that improve activation and retention.",
+    keyRequirements: ["product management", "experimentation", "analytics", "stakeholder alignment"]
+  },
+  {
+    title: "Operations Strategy Manager",
+    company: "Shopee",
+    location: "Singapore",
+    listingUrl: "https://www.linkedin.com/jobs/view/20002",
+    applicationUrl: "https://careers.shopee.sg/job-detail/20002",
+    employmentType: "Full-time",
+    industries: ["E-commerce", "Operations"],
+    keywords: ["operations", "process design", "automation", "cross-functional execution"],
+    jobDescription:
+      "Drive strategic operations programs, improve internal workflows, and work across business and product teams to scale marketplace operations with better systems and execution rigor.",
+    keyRequirements: ["operations strategy", "process improvement", "analytics", "program management"]
+  },
+  {
     title: "Senior Product Manager, Growth AI",
     company: "Northstar Labs",
     location: "Remote",

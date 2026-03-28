@@ -71,6 +71,7 @@ export type UserProfile = {
 
 export type JobPreferences = {
   roles: string[];
+  companies: string[];
   industries: string[];
   locations: string[];
   salaryRange: {
