@@ -33,7 +33,7 @@ type TinyFishAutomationOptions = {
 };
 
 const defaultAsyncPollIntervalMs = 3000;
-const defaultAsyncTimeoutMs = 120000;
+const defaultAsyncTimeoutMs = 300000;
 
 function useMockMode() {
   return !process.env.TINYFISH_API_KEY || process.env.TINYFISH_MODE === "mock";
