@@ -84,6 +84,10 @@ export function DashboardView() {
             brings each form to its confirmation screen, OpenAI drafts answers, and FormPilot waits for approval before
             the last click.
           </p>
+          <p className="hint">
+            Discovery uses live LinkedIn search when TinyFish is configured. Otherwise, FormPilot falls back to the
+            local demo catalog and records that in the activity feed.
+          </p>
           <div className="inline-actions">
             <button className="button-primary" disabled={discovering} onClick={triggerDiscovery} type="button">
               {discovering ? "Running Discovery..." : "Discover LinkedIn Jobs"}
