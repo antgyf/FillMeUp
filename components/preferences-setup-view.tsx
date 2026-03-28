@@ -129,7 +129,7 @@ export function PreferencesSetupView() {
           <div className="summary-list" style={{ marginTop: 16 }}>
             <div className="summary-item">
               <span className="chip">Discovery</span>
-              <p>Seed roles and locations generate the initial LinkedIn candidate listing set.</p>
+              <p>Roles, locations, and keywords drive live LinkedIn searches when TinyFish is available.</p>
             </div>
             <div className="summary-item">
               <span className="chip">Relevance</span>
