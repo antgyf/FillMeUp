@@ -33,7 +33,7 @@ export async function discoverAndQueueJobs(profile: UserProfile, preferences: Jo
       ...job,
       relevanceScore: rankings.find((rankedJob) => rankedJob.jobId === job.id)?.score ?? 0
     }))
-    .filter((job) => job.relevanceScore >= 58)
+    .filter((job) => job.relevanceScore >= 0)
     .sort((left, right) => right.relevanceScore - left.relevanceScore);
 
   insertJobs(rankedJobs);

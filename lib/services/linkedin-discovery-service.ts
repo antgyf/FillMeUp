@@ -1,5 +1,5 @@
 import { mockLinkedInCatalog } from "@/lib/discovery-catalog";
-import { isTinyFishMockMode, runTinyFishAutomation } from "@/lib/services/tinyfish-service";
+import { isTinyFishMockMode, runTinyFishAutomationAsync } from "@/lib/services/tinyfish-service";
 import type { JobDiscoveryResult, JobPreferences, JobSeed } from "@/lib/types";
 
 const defaultMaxQueries = 6;
@@ -23,7 +23,7 @@ export async function discoverLinkedInJobs(preferences: JobPreferences): Promise
     const discoveredJobs: JobSeed[] = [];
 
     for (const query of queryPlan) {
-      const result = await runTinyFishAutomation(
+      const result = await runTinyFishAutomationAsync(
         {
           url: buildLinkedInSearchUrl(query),
           goal: [
@@ -36,7 +36,7 @@ export async function discoverLinkedInJobs(preferences: JobPreferences): Promise
         },
         { jobs: [] as ExtractedLinkedInJob[] },
         {
-          browserProfile: "stealth"
+          browserProfile: "lite"
         }
       );
 
