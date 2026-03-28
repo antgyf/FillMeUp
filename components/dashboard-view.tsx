@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { StatusPill } from "@/components/status-pill";
 import { useSystemSnapshot } from "@/lib/use-system-snapshot";
 
 export function DashboardView() {
   const { snapshot, loading, refresh } = useSystemSnapshot();
   const [discovering, setDiscovering] = useState(false);
+  const [connectingLinkedIn, setConnectingLinkedIn] = useState(false);
+  const [disconnectingLinkedIn, setDisconnectingLinkedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const metrics = useMemo(
@@ -40,7 +42,94 @@ export function DashboardView() {
     }
   }
 
+  async function connectLinkedIn() {
+    setConnectingLinkedIn(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/linkedin/session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ action: "begin" })
+      });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "LinkedIn login failed.");
+      }
+      const session = payload as { loginUrl?: string | null };
+      if (session.loginUrl) {
+        const loginWindow = window.open(session.loginUrl, "_blank", "noopener,noreferrer");
+        if (!loginWindow) {
+          throw new Error("TinyFish provided a login URL, but the browser blocked it. Allow popups and try again.");
+        }
+      } else {
+        throw new Error("TinyFish started the login run but did not return an interactive login URL.");
+      }
+      await refresh();
+    } catch (unknownError) {
+      setError(unknownError instanceof Error ? unknownError.message : "LinkedIn login failed.");
+    } finally {
+      setConnectingLinkedIn(false);
+    }
+  }
+
+  useEffect(() => {
+    if (snapshot.linkedinSession?.status !== "connecting" || !snapshot.linkedinSession?.tinyFishRunId) {
+      return;
+    }
+
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await fetch("/api/linkedin/session", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ action: "status" })
+        });
+        const payload = (await response.json()) as { lastError?: string };
+
+        if (!response.ok) {
+          throw new Error(payload.lastError ?? "Could not refresh LinkedIn login status.");
+        }
+
+        await refresh();
+      } catch (unknownError) {
+        setError(unknownError instanceof Error ? unknownError.message : "Could not refresh LinkedIn login status.");
+      }
+    }, 4000);
+
+    return () => window.clearInterval(interval);
+  }, [refresh, snapshot.linkedinSession?.status, snapshot.linkedinSession?.tinyFishRunId]);
+
+  async function disconnectLinkedIn() {
+    setDisconnectingLinkedIn(true);
+    setError(null);
+
+    try {
+      const response = await fetch("/api/linkedin/session", { method: "DELETE" });
+      const payload = (await response.json()) as { error?: string };
+
+      if (!response.ok) {
+        throw new Error(payload.error ?? "LinkedIn disconnect failed.");
+      }
+
+      await refresh();
+    } catch (unknownError) {
+      setError(unknownError instanceof Error ? unknownError.message : "LinkedIn disconnect failed.");
+    } finally {
+      setDisconnectingLinkedIn(false);
+    }
+  }
+
   const firstReview = snapshot.applications.find((application) => application.status === "awaiting_approval");
+  const linkedInConnected = snapshot.linkedinSession?.status === "connected";
+  const linkedInStatusLabel = linkedInConnected ? "connected" : "not connected";
+  const linkedInRunId = snapshot.linkedinSession?.tinyFishRunId ?? null;
+  const linkedInRunStatus = snapshot.linkedinSession?.tinyFishRunStatus ?? null;
 
   return (
     <main className="page-grid">
@@ -77,16 +166,81 @@ export function DashboardView() {
         </div>
 
         <section className="panel" style={{ marginTop: 18 }}>
-          <p className="eyebrow">Agent Loop</p>
-          <h2>Observe, reason, act, pause, submit.</h2>
+          <p className="eyebrow">LinkedIn Session</p>
+          <h2>Authenticate the user's account before discovery.</h2>
           <p>
-            The discovery pipeline feeds the job scraping queue. Structured jobs feed the application queue. TinyFish
-            brings each form to its confirmation screen, OpenAI drafts answers, and FormPilot waits for approval before
-            the last click.
+            TinyFish owns the LinkedIn browser session here. The status only changes when TinyFish actually returns a
+            verified authenticated session that can later be reused for scraping.
           </p>
           <div className="inline-actions">
-            <button className="button-primary" disabled={discovering} onClick={triggerDiscovery} type="button">
-              {discovering ? "Running Discovery..." : "Discover LinkedIn Jobs"}
+            <button
+              className="button-primary"
+              disabled={connectingLinkedIn || disconnectingLinkedIn}
+              onClick={connectLinkedIn}
+              type="button"
+            >
+              {connectingLinkedIn ? "Waiting For TinyFish Login..." : linkedInConnected ? "Reconnect LinkedIn" : "Log In To LinkedIn"}
+            </button>
+            {snapshot.linkedinSession ? (
+              <button
+                className="button-secondary"
+                disabled={disconnectingLinkedIn || connectingLinkedIn}
+                onClick={disconnectLinkedIn}
+                type="button"
+              >
+                {disconnectingLinkedIn ? "Clearing Session..." : "Disconnect LinkedIn"}
+              </button>
+            ) : null}
+          </div>
+          <div className="chip-row" style={{ marginTop: 14 }}>
+            <StatusPill
+              label={linkedInStatusLabel}
+              tone={linkedInConnected ? "success" : "warning"}
+            />
+            {snapshot.linkedinSession?.sessionOwner ? <span className="hint">Session owner: {snapshot.linkedinSession.sessionOwner}</span> : null}
+            {snapshot.linkedinSession?.tinyFishRunStatus ? (
+              <span className="hint">TinyFish run: {snapshot.linkedinSession.tinyFishRunStatus.toLowerCase()}</span>
+            ) : null}
+            {snapshot.linkedinSession?.lastSyncedAt ? (
+              <span className="hint">Last scrape: {new Date(snapshot.linkedinSession.lastSyncedAt).toLocaleString()}</span>
+            ) : null}
+          </div>
+          {linkedInRunId ? (
+            <div className="summary-list" style={{ marginTop: 16 }}>
+              <div className="summary-item">
+                <strong>Current TinyFish Login Run</strong>
+                <p className="copy-muted mono" style={{ marginTop: 6 }}>{linkedInRunId}</p>
+                <p className="copy-muted" style={{ marginTop: 6 }}>
+                  {linkedInRunStatus
+                    ? `FormPilot is waiting on this one TinyFish run. Current status: ${linkedInRunStatus.toLowerCase()}.`
+                    : "FormPilot is waiting on this one TinyFish run to report back."}
+                </p>
+              </div>
+            </div>
+          ) : null}
+          {snapshot.linkedinSession?.lastError ? <p className="error-text">{snapshot.linkedinSession.lastError}</p> : null}
+          <p className="hint">
+            If TinyFish returns an interactive login URL, FormPilot will open it for the user and poll the TinyFish run.
+            The badge only switches to <span className="mono">connected</span> after TinyFish reports the run completed.
+          </p>
+        </section>
+
+        <section className="panel" style={{ marginTop: 18 }}>
+          <p className="eyebrow">Agent Loop</p>
+          <h2>Log in, scrape, enrich, apply, pause, submit.</h2>
+          <p>
+            After LinkedIn authentication, TinyFish scrapes jobs from the user's own account, the enrichment queue
+            normalizes each listing, and the application queue brings every form to its confirmation screen before the
+            last click.
+          </p>
+          <div className="inline-actions">
+            <button
+              className="button-primary"
+              disabled={discovering || !linkedInConnected}
+              onClick={triggerDiscovery}
+              type="button"
+            >
+              {discovering ? "Scraping Jobs..." : "Scrape My LinkedIn Jobs"}
             </button>
             <Link className="button-secondary" href="/preferences">
               Update Preferences
@@ -98,6 +252,7 @@ export function DashboardView() {
             ) : null}
           </div>
           {error ? <p className="error-text">{error}</p> : null}
+          {!linkedInConnected ? <p className="hint">Log in to LinkedIn first to enable discovery.</p> : null}
           {loading ? <p className="hint">Refreshing dashboard state...</p> : null}
         </section>
 

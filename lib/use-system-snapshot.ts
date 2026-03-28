@@ -6,6 +6,7 @@ import type { FormPilotState } from "@/lib/types";
 const emptySnapshot: FormPilotState = {
   profile: null,
   preferences: null,
+  linkedinSession: null,
   jobs: [],
   applications: [],
   queue: {

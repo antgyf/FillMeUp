@@ -5,6 +5,7 @@ import type {
   ActivityEvent,
   ApplicationRecord,
   FormPilotState,
+  LinkedInSession,
   JobPreferences,
   JobRecord,
   QueueRecord,
@@ -18,6 +19,7 @@ function createDefaultState(): FormPilotState {
   return {
     profile: null,
     preferences: null,
+    linkedinSession: null,
     jobs: [],
     applications: [],
     queue: {
@@ -96,6 +98,24 @@ export function upsertPreferences(partial: Omit<JobPreferences, "updatedAt">) {
   state.activity.push(createActivity("discovery", "Job preferences updated for the discovery pipeline."));
   writeState(state);
   return preferences;
+}
+
+export function upsertLinkedInSession(partial: Omit<LinkedInSession, "updatedAt"> & Partial<Pick<LinkedInSession, "updatedAt">>) {
+  const state = readState();
+  const session: LinkedInSession = {
+    updatedAt: new Date().toISOString(),
+    ...partial
+  };
+
+  state.linkedinSession = session;
+  writeState(state);
+  return session;
+}
+
+export function clearLinkedInSession() {
+  const state = readState();
+  state.linkedinSession = null;
+  writeState(state);
 }
 
 export function insertJobs(jobs: JobRecord[]) {

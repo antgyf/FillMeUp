@@ -1,13 +1,14 @@
 # FormPilot
 
-FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, simulates LinkedIn discovery, pushes jobs through two mandatory queues, uses TinyFish for browser automation tasks, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
+FormPilot is a full-stack, agentic job application automation system built with Next.js. It collects candidate profile data, asks the user to log in to their own LinkedIn account, scrapes jobs from that authenticated session with TinyFish, pushes jobs through two mandatory queues, uses OpenAI for reasoning tasks, and pauses on a human approval screen before the final submit action.
 
 ## What it includes
 
 - User dashboard with queue visibility and pipeline analytics
 - Profile setup with PDF resume upload and structured profile parsing
 - Job preferences page for roles, industries, locations, salary, and keywords
-- Job discovery pipeline that feeds a job scraping queue
+- LinkedIn login flow that establishes a user-owned session for discovery
+- Job discovery pipeline that scrapes LinkedIn jobs and feeds a job scraping queue
 - Job scraping queue that normalizes listing data and hands off to the application queue
 - Application queue that extracts fields, classifies them, generates answers, fills the form, and pauses for approval
 - Review screen where every generated answer can be edited before submission
@@ -37,7 +38,8 @@ FormPilot is a full-stack, agentic job application automation system built with 
    - Save candidate identity, skills, notes, and resume PDF
    - Parse structured profile JSON with OpenAI when `OPENAI_API_KEY` is configured
 2. Job discovery
-   - Generate a structured LinkedIn-style candidate listing set from preferences
+   - Authenticate the user into their own LinkedIn account with TinyFish
+   - Scrape the user's available LinkedIn jobs using the active session plus saved preferences
    - Rank relevance with OpenAI or a local heuristic fallback
    - Push jobs into the job scraping queue
 3. Job scraping queue
@@ -123,6 +125,6 @@ Open [http://localhost:3000](http://localhost:3000).
 This MVP keeps the required architecture visible while staying runnable in a blank repo:
 
 - The queues are implemented in-process and can be replaced with BullMQ plus Redis later.
-- Discovery currently uses a structured LinkedIn-style catalog instead of live scraping.
+- Discovery now expects an authenticated LinkedIn session before scraping.
 - File-backed state is used instead of a database for easy demo setup.
 - TinyFish and OpenAI both support mock mode so the full UX remains testable without paid credentials.
